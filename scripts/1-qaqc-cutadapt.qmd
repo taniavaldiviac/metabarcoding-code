@@ -1,0 +1,93 @@
+---
+title: "Evaluación de calidad: FastQC y MultiQC"
+#subtitle: "24–28 de noviembre de 2025<br>Instituto de Ciencias del Mar y Limnología (UNAM)"
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    toc-location: left
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+# FastQC y MultiQC
+
+**Ejecutar FastQC sobre todos los .fastq**
+
+``` bash
+cd /metabarcoding-code/
+mkdir -p final_data/fastqc
+fastqc -q -t 4 -o final_data/fastqc raw_fastqs/*.fastq
+```
+
+**Verificar instalación y conteo de reportes**
+
+``` bash
+fastqc --version
+ls -1 final_data/fastqc/*_fastqc.html | wc -l
+```
+
+**Ejecutar MultiQC (resume todos los FastQC)**
+
+``` bash
+multiqc final_data/fastqc -o final_data/fastqc
+# Reporte: final_data/fastqc/multiqc_report.html
+```
+
+**Transferir el HTML al computador local (scp)**
+
+Desde tu terminal local:
+
+``` bash
+scp user@server:/ruta/proyecto/final_data/fastqc/multiqc_report.html ~/Downloads/
+open ~/Downloads/multiqc_report.html
+```
+
+**Transferir toda la carpeta (si quieres conservar los .zip FastQC):**
+
+``` bash
+scp -r user@server:/ruta/proyecto/final_data/fastqc ~/fastqc_local/
+open ~/fastqc_local/multiqc_report.html
+```
+
+Tips de revisión en MultiQC:
+
+\- Per base sequence quality: define zonas de truncado (Q≥25–30).
+
+\- Adapter/Overrepresented/Primer content: confirma necesidad de
+recorte.
+
+\- Length distribution: valida rango del amplicón esperado.
+
+# Cutadapt
+
+**Copia y da permisos**
+
+-   En el servidor:
+
+``` bash
+chmod +x scripts/2-cutadapt.sh
+```
+
+**Ejecuta**
+
+``` bash
+bash scripts/2-cutadapt.sh
+```
+
+**Resultados**
+
+-   FASTQ recortados: for_dada2/
+-   Reportes por muestra: cutadapt_reports/\*\_cutadapt.txt
+-   Resumen: cutadapt_reports/overall_report.txt
+
+**Verificación post-recorte (opcional)**
+
+``` bash
+mkdir -p final_data/fastqc_trimmed
+fastqc -q -t 4 -o final_data/fastqc_trimmed for_dada2/*.fastq
+multiqc final_data/fastqc_trimmed -o final_data/fastqc_trimmed
+# Abre: final_data/fastqc_trimmed/multiqc_report.html
+```

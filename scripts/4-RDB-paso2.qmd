@@ -1,0 +1,484 @@
+---
+title: "Base de datos de referencia local, parte 2: Virtual PCR"
+#subtitle: "24–28 de noviembre de 2025<br>Instituto de Ciencias del Mar y Limnología (UNAM)"
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    toc-location: left
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+## Paso 1. Instalación de paquetes
+
+```{r warning=FALSE}
+# Definición de rutas usando el root del proyecto
+# here::here() detecta automáticamente la raíz (donde está el .Rproj)
+proj_root <- here::here()
+message("Proyecto detectado en: ", proj_root)
+
+# Fijar working directory a la raíz del proyecto
+# Esto es útil para código que no usa here() internamente y para Rscript
+setwd(proj_root)
+message("Working directory fijado a: ", proj_root)
+```
+
+```{r}
+library(insect) 
+library(tidyverse) 
+library(Biostrings) 
+library(rentrez) 
+library(purrr) 
+library(ape)
+```
+
+## Paso 2. Parámetros
+
+```{r}
+locus_name <- "12S" # o "16S", etc.
+NCBI_SLEEP_SEC <- 0.34 #respeta rate-limit de NCBI
+```
+
+```{r}
+check_target <- function(stage, obj) {
+  nm <- try(names(obj), silent = TRUE)
+  if (inherits(nm, "try-error") || is.null(nm)) {
+    message("[", stage, "] sin nombres.")
+    return(invisible(FALSE))
+  }
+  hit <- any(grepl("Mycteroperca\\s+rosacea", nm, ignore.case = TRUE))
+  if (hit) {
+    idx <- grep("Mycteroperca\\s+rosacea", nm, ignore.case = TRUE)
+    message("[", stage, "] OK Mycteroperca rosacea (n=", length(idx), "). Ejemplo header: ", nm[idx[1]])
+  } else {
+    message("[", stage, "] PERDIDA Mycteroperca rosacea (no encontrado).")
+  }
+  invisible(hit)
+}
+```
+
+**Entrada y primers**
+
+```{r}
+metadata_location <- file.path(proj_root, "metadata")
+fasta_file <- file.path(metadata_location, "All_Chordata_12S_Amplicon_plus_Mitogenomes.fasta")
+seqs <- Biostrings::readDNAStringSet(fasta_file)
+check_target("raw_fasta_readDNAStringSet", seqs)
+
+# 12S rRNA Valentini (ajusta si corresponde)
+primer_F <- Biostrings::DNAString(toupper("ACACCGCCCGTCACTCT"))
+primer_R <- Biostrings::DNAString(toupper("CTTCCGGTACACTTACCATG"))
+primer_Rc <- Biostrings::reverseComplement(primer_R)
+
+# Longitudes (evita width() conflicto)
+primer_len_F  <- Biostrings::nchar(primer_F)
+primer_len_R  <- Biostrings::nchar(primer_R)
+primer_len_Rc <- Biostrings::nchar(primer_Rc)
+
+# Rango esperado del amplicón (ajusta según tus primers)
+amp_min <- 0
+amp_max <- 110
+
+# Piso biológico para longitudes y control de solapamiento
+allow_overlap <- 0L  # 0 = sin solapamiento F/R; 1 permite 1 nt
+min_len_hard <- primer_len_F + primer_len_Rc - 2L
+effective_amp_min <- max(amp_min, min_len_hard)
+
+# --- control de “solo F” ---
+# Mantener “solo F” solo si la cola (desde F hasta fin) cabe en el rango esperado
+keep_fwd_only_if_tail_le_ampmax <- TRUE
+# Mantener todas las “solo F”; si exceden este tope, truncar
+fwd_only_cap_bp <- 500L
+
+# NUEVO: tolerancia de mismatches (0 = coincidencia exacta)
+max_mm  <- 6      # prueba con 1–2; más alto = más lento y más falsos positivos
+allow_indels <- FALSE
+
+```
+
+**Prefiltrado vectorizado: secuencias que contienen ambos primers**
+
+```{r}
+has_F  <- Biostrings::vcountPattern(primer_F,  seqs,
+       max.mismatch = max_mm, with.indels = allow_indels) > 0L
+has_Rc <- Biostrings::vcountPattern(primer_Rc, seqs,
+       max.mismatch = max_mm, with.indels = allow_indels) > 0L
+
+seqs_both <- seqs[has_F & has_Rc]          # F y R
+seqs_forward_only <- seqs[has_F & !has_Rc]        # solo F
+cat("Con ambos primers (F & R): ", length(seqs_both), "\n")
+cat("Solo forward (F):          ", length(seqs_forward_only), "\n")
+
+if (length(seqs_both) == 0 && length(seqs_forward_only) == 0)stop("No hay secuencias con el primer forward.")
+
+# Usaremos seqs_both para extracción de amplicones; seqs_forward_only se añadirá después.
+seqs_pref <- seqs_both
+
+check_target("seqs_both", seqs_both)
+check_target("seqs_forward_only", seqs_forward_only)
+check_target("seqs_pref (ambos)", seqs_pref)
+```
+
+## Paso 3. Posiciones de los primers
+
+```{r}
+hits_F  <- Biostrings::vmatchPattern(primer_F,  seqs_pref,
+             max.mismatch = max_mm, with.indels = allow_indels)
+hits_Rc <- Biostrings::vmatchPattern(primer_Rc, seqs_pref,
+             max.mismatch = max_mm, with.indels = allow_indels)
+```
+
+**Chequeos diagnósticos**
+
+```{r}
+dist_example <- function(i) {
+  f <- IRanges::start(hits_F[[i]])
+  r <- IRanges::start(hits_Rc[[i]])
+  if (!length(f) || !length(r)) return(integer(0))
+  as.integer(outer(r, f, "-"))
+}
+dists <- unlist(lapply(seq_len(length(seqs_pref)), dist_example), use.names = FALSE)
+dists <- dists[dists > 0]
+
+if (length(dists)) {
+  lens_vec <- dists + primer_len_Rc
+  cat("Resumen distancias (r - f):\n"); print(summary(dists))
+  cat("Quantiles distancias (5-95%):\n"); print(quantile(dists, probs = c(.05,.25,.5,.75,.95)))
+  cat("Quantiles longitud amplicón estimada (5-95%):\n")
+  print(quantile(lens_vec, probs = c(.05,.25,.5,.75,.95)))
+  suggest_min <- as.integer(quantile(lens_vec, 0.05, na.rm = TRUE))
+  suggest_max <- as.integer(quantile(lens_vec, 0.95, na.rm = TRUE))
+  cat(sprintf("Sugerencia de rango amp_min/amp_max ~ [%d, %d]\n", suggest_min, suggest_max))
+} else {
+  warning("No se pudieron calcular distancias (grupo con ambos primers).")
+}
+```
+
+## Paso 4. Emparejar F y R y extraer amplicón
+
+```{r echo=FALSE}
+debug_virtual_pcr <- FALSE  # pon TRUE para mensajes detallados
+
+extract_amplicon <- function(i) {
+  seq_obj <- seqs_pref[[i]]
+  seq_len <- Biostrings::nchar(seq_obj)
+  f_starts <- IRanges::start(hits_F[[i]])
+  r_starts <- IRanges::start(hits_Rc[[i]])
+  if (!length(f_starts) || !length(r_starts)) return(NA_character_)
+  best <- NA_character_; best_len <- Inf
+  for (fi in f_starts) {
+    # R debe empezar al menos al final de F menos allow_overlap
+    r_after <- r_starts[r_starts >= fi + primer_len_F - allow_overlap]
+    if (!length(r_after)) next
+    ends <- r_after + primer_len_Rc - 1L
+    valid_idx <- which(ends <= seq_len)
+    if (!length(valid_idx)) next
+    r_after_valid <- r_after[valid_idx]
+    ends_valid <- ends[valid_idx]
+    lens <- ends_valid - fi + 1L
+    ok <- which(lens >= effective_amp_min & lens <= amp_max)
+    if (length(ok)) {
+      j <- ok[which.min(lens[ok])]
+      rj <- r_after_valid[j]
+      end_j <- ends_valid[j]
+      cand <- as.character(Biostrings::subseq(seq_obj, start = fi, end = end_j))
+      if (lens[j] < best_len) {
+        best <- cand
+        best_len <- lens[j]
+        if (debug_virtual_pcr) {
+          message(sprintf("Seq %d: fi=%d rj=%d end=%d len=%d", i, fi, rj, end_j, lens[j]))
+        }
+      }
+    }
+  }
+  best
+}
+
+n_pref <- length(seqs_pref)
+amplicons_chr <- vector("list", n_pref)
+errors_idx <- integer(0)
+
+for (i in seq_len(n_pref)) {
+  res <- try(extract_amplicon(i), silent = TRUE)
+  if (inherits(res, "try-error")) {
+    errors_idx <- c(errors_idx, i)
+    amplicons_chr[[i]] <- NA_character_
+    if (debug_virtual_pcr) message("Error en secuencia ", i, ": ", conditionMessage(attr(res,"condition")))
+  } else {
+    amplicons_chr[[i]] <- res
+  }
+  if (i %% 500 == 0) message("Procesadas: ", i, "/", n_pref)
+}
+
+if (length(errors_idx)) {
+  warning("Secuencias con error (salteadas): ", paste(errors_idx, collapse = ", "))
+}
+
+keep <- !is.na(amplicons_chr)
+```
+
+**Función de sanitización (debe estar antes de usarla)**
+
+```{r}
+sanitize_dna <- function(s) {
+  s <- toupper(s)
+  s <- chartr("U", "T", s)
+  s <- gsub("[^ACGTRYSWKMBDHVN.-]", "N", s)
+  s
+}
+```
+
+**Construir conjunto de amplicones con ambos primers (F & R)**
+
+```{r}
+amp_both_vec <- vapply(amplicons_chr[keep], sanitize_dna, character(1), USE.NAMES = FALSE)
+amp_both_set <- Biostrings::DNAStringSet(amp_both_vec)
+names(amp_both_set) <- names(seqs_pref)[keep]
+```
+
+**Fallback "solo F" para las que tenían F&R pero no cayeron en el rango
+(NA)**
+
+```{r}
+failed_both_idx <- which(!keep)
+subset_failed <- seqs_pref[failed_both_idx]
+forward_hits_both <- Biostrings::vmatchPattern(
+    primer_F, subset_failed, max.mismatch = max_mm, with.indels = allow_indels)
+
+extract_forward_only_both <- function(i) {
+    f_starts <- IRanges::start(forward_hits_both[[i]])
+    if (!length(f_starts)) return(NA_character_)
+    fi <- f_starts[1]
+    seq_obj <- subset_failed[[i]]
+    seq_len <- Biostrings::nchar(seq_obj)
+    if (is.na(fi) || fi < 1L || fi > seq_len) return(NA_character_)
+    end <- min(seq_len, fi + fwd_only_cap_bp - 1L)
+    as.character(Biostrings::subseq(seq_obj, start = fi, end = end))
+  }
+ 
+forward_chr_both <- vapply(seq_len(length(subset_failed)), extract_forward_only_both, character(1))
+f_keep_both <- !is.na(forward_chr_both)
+if (any(f_keep_both)) {
+    forward_vec_both <- vapply(forward_chr_both[f_keep_both], sanitize_dna, character(1), USE.NAMES = FALSE)
+    forward_set_both <- Biostrings::DNAStringSet(forward_vec_both)
+    names(forward_set_both) <- paste0(names(subset_failed)[f_keep_both], "|FORWARD_ONLY")
+  }
+```
+
+**Procesar secuencias solo forward**
+
+```{r}
+forward_hits_list <- Biostrings::vmatchPattern(primer_F, seqs_forward_only,
+                    max.mismatch = max_mm, with.indels = allow_indels)
+extract_forward_only <- function(i) {
+  f_starts <- IRanges::start(forward_hits_list[[i]])
+  if (!length(f_starts)) return(NA_character_)
+  fi <- f_starts[1]
+  seq_obj <- seqs_forward_only[[i]]
+  seq_len <- Biostrings::nchar(seq_obj)
+  if (is.na(fi) || fi < 1L || fi > seq_len) return(NA_character_)
+  end <- min(seq_len, fi + fwd_only_cap_bp - 1L)
+  as.character(Biostrings::subseq(seq_obj, start = fi, end = end))
+}
+forward_chr <- vapply(seq_len(length(seqs_forward_only)), extract_forward_only, character(1))
+forward_keep <- !is.na(forward_chr)
+forward_vec <- vapply(forward_chr[forward_keep], sanitize_dna, character(1), USE.NAMES = FALSE)
+forward_set <- Biostrings::DNAStringSet(forward_vec)
+names(forward_set) <- paste0(names(seqs_forward_only)[forward_keep], "|FORWARD_ONLY")
+
+check_target("forward_set", forward_set)
+check_target("forward_set_both", forward_set_both)
+```
+
+**Combinar ambos conjuntos (incluye fallback) y deduplicar por nombre**
+
+```{r}
+amplicons <- c(amp_both_set, forward_set, forward_set_both)
+amplicons <- amplicons[!duplicated(names(amplicons))]
+```
+
+**Diagnóstico**
+
+```{r}
+amp_lengths <- Biostrings::nchar(amplicons)
+cat("Resumen longitudes (incluye forward_only):\n"); print(summary(amp_lengths))
+cat("Total amplicones (F&R): ", length(amp_both_set),
+    " | Solo F: ", length(forward_set),
+    " | Combinados: ", length(amplicons), "\n")
+```
+
+**Guardar FASTA**
+
+```{r}
+#40,384
+fasta_file <- file.path(metadata_location, sprintf("Amplicons_%s_virtualPCR_raw.fasta", locus_name))
+Biostrings::writeXStringSet(amplicons, amplicons_raw_fa)
+message("Amplicones (crudo) escrito en: ", amplicons_raw_fa)
+```
+
+**Renombrar con “Especie\|Accession” usando entrez_summary por lotes**
+
+**Preservar sufijos \|FORWARD_ONLY o \|CONTROL**
+
+```{r}
+# Preservar sufijos |FORWARD_ONLY o |CONTROL
+orig_headers <- names(amplicons)
+
+suffix <- ifelse(grepl("\\|CONTROL$", orig_headers), "|CONTROL",
+          ifelse(grepl("\\|FORWARD_ONLY$", orig_headers), "|FORWARD_ONLY", ""))
+
+# Accession = primer token antes de espacio o '|'
+acc_vec <- sub("^([^[:space:]|]+).*", "\\1", orig_headers)  # POSIX seguro
+
+mk_batches_idx <- function(n, batch) split(seq_len(n), (seq_len(n) - 1L) %/% batch)
+
+# --- util: partir IDs por tamaño de URL y con fallback recursivo ---
+chunk_by_urlsize <- function(ids, max_chars = 1400L) {
+  if (!length(ids)) return(list(integer(0)))
+  lens <- nchar(ids) + 1L
+  chunks <- list(); cur <- integer(0); cur_sum <- 0L
+  for (i in seq_along(ids)) {
+    if (lens[i] > max_chars) {
+      chunks[[length(chunks) + 1L]] <- i
+      cur <- integer(0); cur_sum <- 0L
+    } else if (cur_sum + lens[i] <= max_chars) {
+      cur <- c(cur, i); cur_sum <- cur_sum + lens[i]
+    } else {
+      chunks[[length(chunks) + 1L]] <- cur
+      cur <- i; cur_sum <- lens[i]
+    }
+  }
+  if (length(cur)) chunks[[length(chunks) + 1L]] <- cur
+  chunks
+}
+
+esummary_batch_urls <- function(ids, max_chars = 1400L, sleep = NCBI_SLEEP_SEC) {
+  ids <- unique(ids)
+  if (!length(ids)) return(tibble::tibble(accession = character(), organism = character()))
+  out_rows <- list()
+  chunks <- chunk_by_urlsize(ids, max_chars = max_chars)
+  for (ci in seq_along(chunks)) {
+    sub_ids <- ids[chunks[[ci]]]
+    message(sprintf("esummary chunk %d/%d (n=%d)", ci, length(chunks), length(sub_ids)))
+    res <- try(rentrez::entrez_summary(db = "nucleotide", id = sub_ids), silent = TRUE)
+    if (inherits(res, "try-error")) {
+      msg <- conditionMessage(attr(res, "condition"))
+      if (grepl("HTTP failure 414", msg) && length(sub_ids) > 1) {
+        mid <- floor(length(sub_ids) / 2)
+        out_rows[[length(out_rows) + 1L]] <- esummary_batch_urls(sub_ids[1:mid], max_chars, sleep)
+        out_rows[[length(out_rows) + 1L]] <- esummary_batch_urls(sub_ids[(mid + 1):length(sub_ids)], max_chars, sleep)
+        next
+      } else {
+        warning("Fallo esummary (chunk ", ci, "): ", msg)
+        next
+      }
+    }
+    if (length(res) == 0) next
+    
+    get_acc <- function(x) {
+      a <- tryCatch(x$accessionversion, error = function(e) NA_character_)
+      if (is.null(a) || length(a) == 0 || is.na(a) || !nzchar(a)) {
+        cap <- tryCatch(x$caption, error = function(e) NA_character_)
+        if (!is.null(cap) && length(cap) > 0 && !is.na(cap) && nzchar(cap)) {
+          a <- sub("^([^[:space:]|]+).*", "\\1", cap)
+        } else {
+          a <- NA_character_
+        }
+      }
+      as.character(a)
+    }
+    get_org <- function(x) {
+      o <- tryCatch(x$organism, error = function(e) NA_character_)
+      if (is.null(o) || length(o) == 0 || is.na(o) || !nzchar(o)) {
+        t <- tryCatch(x$title, error = function(e) NA_character_)
+        o <- if (!is.null(t) && length(t) > 0 && !is.na(t)) t else NA_character_
+      }
+      as.character(o)
+    }
+    
+    rows <- purrr::map(res, function(x) {
+      acc <- get_acc(x)
+      if (is.na(acc) || !nzchar(acc)) return(NULL)
+      org <- get_org(x)
+      tibble::tibble(accession = acc, organism = org)
+    })
+    if (length(rows)) out_rows[[length(out_rows) + 1L]] <- dplyr::bind_rows(rows)
+    Sys.sleep(sleep)
+  }
+  dplyr::bind_rows(out_rows) %>% dplyr::distinct(accession, .keep_all = TRUE)
+}
+# --- caché local para anotaciones NCBI ---
+acc2org_cache_path <- file.path(out_dir, sprintf("acc2org_cache_%s.tsv.gz", locus_name))
+
+load_acc2org_cache <- function(path = acc2org_cache_path) {
+  if (!file.exists(path)) return(tibble::tibble(accession = character(), organism = character()))
+  suppressWarnings(readr::read_tsv(path, show_col_types = FALSE, progress = FALSE))
+}
+
+save_acc2org_cache <- function(tbl, path = acc2org_cache_path) {
+  tbl <- dplyr::distinct(tbl, accession, .keep_all = TRUE)
+  readr::write_tsv(tbl, path)
+}
+
+get_acc2org_cached <- function(acc_u, max_chars = 1200L, sleep = NCBI_SLEEP_SEC) {
+  cache <- load_acc2org_cache()
+  missing <- setdiff(acc_u, cache$accession)
+  if (length(missing)) {
+    message("Anotaciones faltantes: ", length(missing), " (de ", length(acc_u), "). Consultando NCBI...")
+    new_rows <- esummary_batch_urls(missing, max_chars = max_chars, sleep = sleep)
+    cache <- dplyr::bind_rows(cache, new_rows) %>% dplyr::distinct(accession, .keep_all = TRUE)
+    save_acc2org_cache(cache)
+  } else {
+    message("Usando caché NCBI (", nrow(cache), " accesiones).")
+  }
+  cache
+}
+
+parse_species <- function(h) {
+  h2 <- sub("\\|(FORWARD_ONLY|CONTROL)$", "", h)
+  s  <- if (grepl("\\|", h2)) sub("\\|.*$", "", h2) else h2
+  m  <- regexpr("([A-Z][a-z]+[[:space:]][a-z][a-z\\-]+)", s)
+  if (m[1] > 0) regmatches(s, m)[1] else NA_character_
+}
+species_from_orig <- vapply(orig_headers, parse_species, character(1))
+
+use_entrez_annotation <- TRUE  # pon FALSE para usar solo el nombre del header
+
+if (use_entrez_annotation) {
+  acc_u <- unique(acc_vec)
+  acc2org <- get_acc2org_cached(acc_u, max_chars = 1200L, sleep = NCBI_SLEEP_SEC)
+  acc2org <- dplyr::right_join(
+    acc2org,
+    tibble::tibble(accession = acc_u,
+                   org_fallback = species_from_orig[match(acc_u, acc_vec)]),
+    by = "accession"
+  ) %>%
+    dplyr::mutate(organism = stringr::str_squish(dplyr::coalesce(organism, org_fallback)))
+  map_hdr <- stats::setNames(
+    ifelse(is.na(acc2org$organism) | acc2org$organism == "",
+           acc2org$accession,
+           paste0(acc2org$organism, "|", acc2org$accession)),
+    acc2org$accession
+  )
+  base_headers <- vapply(acc_vec, function(a) if (!is.na(map_hdr[a]) && nzchar(map_hdr[a])) map_hdr[a] else a,
+                         character(1), USE.NAMES = FALSE)
+} else {
+  # Solo parseo local del header original
+  species_local <- stringr::str_squish(species_from_orig)
+  species_local[is.na(species_local) | species_local == ""] <- acc_vec[is.na(species_local) | species_local == ""]
+  base_headers <- paste0(species_local, "|", acc_vec)
+}
+
+new_headers <- ifelse(nzchar(suffix), paste0(base_headers, suffix), base_headers)
+names(amplicons) <- new_headers
+
+cat("[final] Por accession MK902866.1: ",
+    any(grepl("(^|\\|)MK902866\\.1(\\||$)", names(amplicons))), "\n")
+
+amplicons_renamed_fa <- file.path(metadata_location, sprintf("Amplicons_%s_virtualPCR_renamed.fasta", locus_name))
+Biostrings::writeXStringSet(amplicons, amplicons_renamed_fa)
+message("Amplicones renombrados escrito en: ", amplicons_renamed_fa)
+```

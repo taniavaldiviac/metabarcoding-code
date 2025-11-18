@@ -1,0 +1,9 @@
+touch cutadapt_reports/.gitkeep
+touch final_data/csv_output/.gitkeep
+touch final_data/fastqc/.gitkeep
+touch final_data/fastqc_trimmed/.gitkeep
+touch final_data/logs/.gitkeep
+touch final_data/qc_lengths/.gitkeep
+touch final_data/rdata_output/.gitkeep
+touch for_dada2/.gitkeep
+touch raw_fastqs/.gitkeep

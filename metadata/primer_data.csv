@@ -1,0 +1,2 @@
+name,locus_shorthand,seq_f,primer_length_f,seq_r,primer_length_r,amplicon_legth,F_qual,R_qual,max_amplicon_length,min_amplicon_length,max_trim,overlap,db_name,known_hashes_name
+12S,12S,ACACCGCCCGTCACTCT,17,CTTCCGGTACACTTACCATG,20,65,30,30,100,40,100,12,12S_fish_taxonomy.fasta,12S_euk_prev_hashes.csv

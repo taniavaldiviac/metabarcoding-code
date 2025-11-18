@@ -1,0 +1,123 @@
+---
+title: "Explicación del Pipeline dada2 - Paso de Preparación y Filtrado Inicial"
+author: "Tu Nombre"
+date: "`r Sys.Date()`"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    code-tools: true
+    theme: cosmo
+    highlight-style: github
+    embed-resources: true
+---
+
+# Introducción al pipeline y preparación de datos
+
+La primera parte del pipeline dada2 prepara el entorno y los datos para el análisis de secuencias.  
+Estos pasos aseguran reproducibilidad, organización y calidad antes de aplicar los filtros de calidad y trimming.
+
+---
+
+## 1. Configuración del entorno reproducible
+
+- Se activa el entorno de paquetes con `renv` si existe, garantizando que todas las dependencias estén controladas y sean reproducibles.
+- Se cargan las librerías necesarias para el pipeline:  
+  - **dada2**: procesamiento y denoising de secuencias.
+  - **tidyverse**: manipulación de datos y lectura de archivos.
+  - **ShortRead** y **seqinr**: utilidades para manejo de archivos FASTQ y FASTA.
+  - **digest**: generación de hashes para identificar secuencias únicas.
+  - **here** y **fs**: manejo robusto de rutas y archivos.
+  - **readr**: lectura y escritura eficiente de CSVs.
+
+---
+
+## 2. Definición de rutas y parámetros
+
+- Se detecta la raíz del proyecto y se fija el directorio de trabajo para asegurar rutas relativas correctas.
+- Se definen rutas para:
+  - Archivos FASTQ sin procesar.
+  - Carpeta de salida para resultados y logs.
+  - Carpeta de metadatos (incluyendo parámetros de primers y bases de datos de referencia).
+- Se lee la tabla de parámetros (`primer_data.csv`) que contiene información clave para cada locus/primer:
+  - Umbrales de calidad (`F_qual`, `R_qual`).
+  - Nombre de la base de datos de referencia.
+  - Máximo permitido para truncamiento (`max_trim`).
+
+---
+
+## 3. Validación de parámetros y metadatos
+
+- Se verifica que la tabla de parámetros contenga todas las columnas necesarias.
+- Se guarda la información de la sesión (`sessionInfo.txt`) para asegurar reproducibilidad y facilitar diagnóstico.
+
+---
+
+## 4. Selección y validación de archivos de entrada
+
+- Se identifican los archivos FASTQ correspondientes al locus/primer a procesar.
+- Se construyen los nombres de muestra a partir del nombre de archivo, asegurando unicidad y pareo correcto entre archivos forward y reverse.
+- Se verifica que no haya archivos vacíos o corruptos, eliminando estos antes de continuar.
+
+---
+
+## 5. Inspección de calidad y cálculo de puntos de truncamiento
+
+- Se generan gráficos de calidad para las lecturas forward y reverse, permitiendo inspección visual y diagnóstico por parte del usuario.
+- Se calcula el punto óptimo de truncamiento (`truncLen`) para cada dirección, usando la mediana de los ciclos donde la calidad cae por debajo del umbral definido.
+- Se limita el truncamiento al máximo permitido (`max_trim`) para evitar perder el solapamiento necesario entre lecturas.
+
+---
+
+## 6. Diagnóstico opcional de longitudes de lecturas
+
+- Se calcula y grafica la distribución de longitudes de las lecturas crudas, útil para detectar problemas de secuenciación o inconsistencias en los datos.
+
+---
+
+## 7. Filtrado y trimming de lecturas
+
+- Se ejecuta el paso de **filter and trim** usando los parámetros calculados y definidos:
+  - `truncLen`: recorte en los puntos óptimos de calidad.
+  - `maxEE`: máximo de errores esperados por lectura.
+  - `maxN`: no se permiten bases ambiguas.
+  - `truncQ`: recorte en calidad mínima.
+  - `rm.phix`: eliminación de lecturas PhiX.
+- Se valida que los puntos de truncamiento sean razonables (no menores a 50 bp).
+- Se reporta la retención global de lecturas y se advierte si es baja (< 50%).
+- Se identifican muestras con retención muy baja (< 30%) para diagnóstico.
+
+---
+
+## Resumen ejecutivo
+
+| Aspecto | Explicación |
+|---------|-------------|
+| **Qué es** | Preparación, validación y filtrado inicial de datos para dada2 |
+| **Cómo se calcula** | Lectura de parámetros, inspección de calidad, cálculo de truncLen y aplicación de filtros |
+| **Valores normales** | Retención global > 50%, truncLen > 50 bp, sin archivos vacíos |
+| **Por qué importa** | Asegura que solo datos de alta calidad y correctamente organizados pasen al análisis |
+| **Qué hacer** | Revisar gráficos de calidad, ajustar parámetros si la retención es baja, validar metadatos |
+
+---
+
+## Recomendaciones para el análisis
+
+- Revisa los gráficos de calidad antes de definir los parámetros de recorte.
+- Si la retención de lecturas es baja, considera relajar los parámetros (`maxEE`, `truncLen`) o revisar la calidad de la secuenciación.
+- Usa la tabla de filtrado para identificar muestras problemáticas y tomar decisiones informadas sobre el análisis.
+- Mantén la información de sesión y parámetros guardada para reproducibilidad y diagnóstico.
+
+---
+
+:::{.callout-tip}
+## Para el curso
+
+Muestra a tus alumnos:
+
+1. Los gráficos de calidad antes del filtrado.
+2. La tabla de filtrado y retención por muestra.
+3. Cómo interpretar valores "normales" vs "problemáticos".
+4. Qué hacer si hay valores bajos de retención.
+:::

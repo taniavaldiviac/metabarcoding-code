@@ -1,0 +1,505 @@
+---
+title: "Explicación del Pipeline dada2 - Análisis de Tasas de Error"
+author: "Tu Nombre"
+date: "`r Sys.Date()`"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: show
+    code-tools: true
+    theme: cosmo
+    highlight-style: github
+    embed-resources: true
+---
+
+# Introducción al Aprendizaje de Errores en dada2
+
+## ¿Qué es un modelo de error?
+
+En secuenciación Illumina, la máquina **comete errores** al leer las bases del ADN:
+
+- Una **A real** puede leerse erróneamente como **C**, **G** o **T**
+- Una **C real** puede leerse erróneamente como **A**, **G** o **T**
+- Y así sucesivamente...
+
+dada2 **aprende estas tasas de error** para distinguir:
+
+✅ **Variantes biológicas reales** (diferencias entre especies)  
+❌ **Errores técnicos** (errores de la máquina de secuenciación)
+
+---
+
+# Estructura de los Objetos de Error
+
+## Inspección de `errF`
+
+```{r eval=FALSE}
+# Ver estructura completa del modelo de error
+str(errF)
+```
+
+**Salida esperada:**
+
+```
+List of 3
+ $ err_out: num [1:16, 1:41] 0.8464 0.0829 0.0296 0.0411 ...
+  ..- attr(*, "dimnames")=List of 2
+  .. ..$ : chr [1:16] "A2A" "A2C" "A2G" "A2T" ...
+  .. ..$ : chr [1:41] "0" "1" "2" "3" ...
+ $ err_in : List of 9 (modelos intermedios de cada iteración)
+ $ trans  : int [1:16, 1:41] (conteos observados por transición y Q-score)
+```
+
+### Componentes clave:
+
+| Componente | Descripción |
+|------------|-------------|
+| `err_out` | **Matriz de tasas de error** [16 transiciones × 41 Q-scores] |
+| `trans` | Nombres de transiciones (A2A, A2C, A2G, ...) en `rownames` |
+| `err_in` | Historial de modelos intermedios (convergencia) |
+
+---
+
+## Nombres de Transiciones
+
+```{r eval=FALSE}
+# Ver nombres de filas (transiciones)
+rownames(errF$err_out)
+```
+
+**Salida:**
+
+```
+ [1] "A2A" "A2C" "A2G" "A2T" "C2A" "C2C" "C2G" "C2T"
+ [9] "G2A" "G2C" "G2G" "G2T" "T2A" "T2C" "T2G" "T2T"
+```
+
+### Interpretación:
+
+- **A2A, C2C, G2G, T2T**: Transiciones **correctas** (la base se lee correctamente)
+- **A2C, A2G, A2T**: Errores donde una **A** se lee como **C**, **G** o **T**
+- **C2A, C2G, C2T**: Errores donde una **C** se lee como **A**, **G** o **T**
+- Etc.
+
+---
+
+# Cálculo de `err_summary`
+
+## ¿Qué es `err_summary`?
+
+Es una **tabla resumen** que calcula el **promedio** de las tasas de error para cada tipo de transición (excluyendo las correctas).
+
+```{r eval=FALSE}
+# Estructura de err_summary
+err_summary
+```
+
+**Ejemplo de salida:**
+
+```
+  Direction       A2C       A2G       A2T       C2A       C2G       C2T
+1   Forward 0.0318234 0.0116845 0.0158932 0.0529876 0.0046123 0.0084567
+2   Reverse 0.0345678 0.0123456 0.0178901 0.0567890 0.0051234 0.0091234
+```
+
+---
+
+## ¿Cómo se calcula?
+
+### Paso 1: Extraer una fila de `err_out`
+
+```{r eval=FALSE}
+# Extraer tasas de error para la transición A→C (A2C)
+# Esta es una fila de 41 valores (uno por cada Q-score: Q0, Q1, ..., Q40)
+errF$err_out["A2C", ]
+```
+
+**Salida ejemplo:**
+
+```
+        0         1         2         3  ...        38        39        40
+0.0829362 0.0829362 0.0829362 0.0829362  ... 0.0001627 0.0001627 0.0001627
+```
+
+### Paso 2: Calcular el promedio
+
+```{r eval=FALSE}
+# Promedio a través de todos los Q-scores
+mean(errF$err_out["A2C", ], na.rm = TRUE)
+```
+
+**Resultado:** `0.0318234` (3.18% de error promedio)
+
+### Paso 3: Repetir para todas las transiciones
+
+```{r eval=FALSE}
+err_summary_F <- data.frame(
+  Direction = "Forward",
+  A2C = mean(errF$err_out["A2C", ], na.rm = TRUE),
+  A2G = mean(errF$err_out["A2G", ], na.rm = TRUE),
+  A2T = mean(errF$err_out["A2T", ], na.rm = TRUE),
+  C2A = mean(errF$err_out["C2A", ], na.rm = TRUE),
+  # ... y así para todas las transiciones de error
+  stringsAsFactors = FALSE
+)
+```
+
+---
+
+# Interpretación de los Valores
+
+## Valores Normales (Buena Calidad)
+
+| Transición | Rango Esperado | Interpretación |
+|------------|----------------|----------------|
+| `A2C`, `A2G`, `A2T` | 0.001 - 0.05 | 0.1% - 5% de error |
+| `C2A`, `C2G`, `C2T` | 0.001 - 0.05 | Similar |
+| `G2A`, `G2C`, `G2T` | 0.001 - 0.05 | Similar |
+| `T2A`, `T2C`, `T2G` | 0.001 - 0.05 | Similar |
+
+## Valores Problemáticos
+
+```{r eval=FALSE}
+# Ejemplo de valor alto (PROBLEMA)
+A2C = 0.15  # 15% de error → ¡Demasiado alto!
+```
+
+**Posibles causas:**
+
+- ⚠️ Calidad de secuenciación muy baja
+- ⚠️ Problemas con la química de Illumina
+- ⚠️ Contaminación cruzada (*index hopping*)
+- ⚠️ Errores sistemáticos en el run
+
+---
+
+# Ejemplo Pedagógico
+
+## Simulación de Errores
+
+```{r}
+# Supongamos que tienes 1000 As reales en tu secuencia
+n_bases_A <- 1000
+
+# Y err_summary dice: A2C = 0.03 (3%)
+error_rate_A2C <- 0.03
+
+# Entonces:
+bases_correctas <- round(n_bases_A * (1 - error_rate_A2C))
+bases_incorrectas <- round(n_bases_A * error_rate_A2C)
+
+cat("De", n_bases_A, "As reales:\n")
+cat("  -", bases_correctas, "se leen correctamente como A (", (1-error_rate_A2C)*100, "%)\n")
+cat("  -", bases_incorrectas, "se leen erróneamente como C (", error_rate_A2C*100, "%)\n")
+```
+
+## ¿Cómo usa dada2 esta información?
+
+```{r}
+#| echo: true
+#| eval: false
+
+# dada2 usa el modelo de error para CORREGIR:
+# 
+# Escenario 1: Base con alta calidad (Q30)
+# - Si ve una C en Q30, pero 97% de las lecturas tienen A
+# → Probablemente es una A real (error de secuenciación)
+# 
+# Escenario 2: Base con baja calidad (Q10)
+# - Si ve una C en Q10, y solo 60% tienen A
+# → Puede ser una variante real (polimorfismo biológico)
+```
+
+---
+
+# Comparación Forward vs Reverse
+
+## Tabla Comparativa
+
+```{r}
+#| echo: false
+library(knitr)
+library(kableExtra)
+
+comparison <- data.frame(
+  Aspecto = c("Calidad promedio", "Tasas de error", "Razón"),
+  Forward = c("Q30-Q35", "1-3%", "Primeros ciclos de secuenciación"),
+  Reverse = c("Q25-Q30", "3-5%", "Últimos ciclos (calidad cae)")
+)
+
+kable(comparison, format = "html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover"))
+```
+
+**Nota importante:** Es **normal** que Reverse tenga tasas de error ligeramente mayores.
+
+---
+
+# Visualización de Tasas de Error
+
+## Gráfico de Comparación
+
+```{r}
+#| fig-width: 10
+#| fig-height: 6
+#| warning: false
+
+library(ggplot2)
+library(tidyr)
+
+# Datos de ejemplo (reemplazar con tus valores reales)
+err_summary <- data.frame(
+  Direction = c("Forward", "Reverse"),
+  A2C = c(0.0318, 0.0346),
+  A2G = c(0.0117, 0.0123),
+  A2T = c(0.0159, 0.0179),
+  C2A = c(0.0530, 0.0568),
+  C2G = c(0.0046, 0.0051),
+  C2T = c(0.0085, 0.0091),
+  G2A = c(0.0068, 0.0072),
+  G2C = c(0.0109, 0.0112),
+  G2T = c(0.0054, 0.0059),
+  T2A = c(0.0235, 0.0257),
+  T2C = c(0.0077, 0.0085),
+  T2G = c(0.0123, 0.0135)
+)
+
+# Convertir a formato largo para ggplot
+err_long <- err_summary %>%
+  pivot_longer(cols = -Direction, 
+               names_to = "Transition", 
+               values_to = "Error_Rate")
+
+# Gráfico de barras
+ggplot(err_long, aes(x = Transition, y = Error_Rate, fill = Direction)) +
+  geom_col(position = "dodge", alpha = 0.8) +
+  geom_hline(yintercept = 0.05, linetype = "dashed", color = "red", linewidth = 0.8) +
+  annotate("text", x = 10, y = 0.052, label = "Umbral 5%", color = "red", fontface = "bold") +
+  scale_fill_manual(values = c("Forward" = "#69b3a2", "Reverse" = "#f77f00")) +
+  labs(
+    title = "Tasas de Error por Transición: Forward vs Reverse",
+    subtitle = "Promedio a través de todos los Q-scores (0-40)",
+    x = "Tipo de Transición",
+    y = "Tasa de Error Promedio",
+    fill = "Dirección"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    plot.subtitle = element_text(hjust = 0.5, color = "grey40"),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "top"
+  )
+```
+
+---
+
+# Diagnóstico de Problemas
+
+## Checklist de Validación
+
+### ✅ Señales de Buena Calidad
+
+- Tasas de error < 5% (0.05)
+- Reverse ≤ 2× Forward
+- Gráficos de error muestran puntos rojos cerca de línea negra
+
+### ⚠️ Señales de Problemas
+
+```{r}
+#| echo: false
+problems <- data.frame(
+  Síntoma = c(
+    "Tasas > 10%",
+    "Reverse >> Forward (3-5×)",
+    "Muchos NaN en err_summary",
+    "Warning: 'no convergió'"
+  ),
+  Posible_Causa = c(
+    "Calidad muy baja, contaminación",
+    "Problema de ciclos de secuenciación",
+    "Datos insuficientes para aprender",
+    "MAX_CONSIST muy bajo, o datos ruidosos"
+  ),
+  Acción = c(
+    "Revisar gráficos de calidad, aumentar truncLen",
+    "Revisar QC del run, contactar proveedor",
+    "Aumentar nbases_target o usar más muestras",
+    "Aumentar MAX_CONSIST a 50+"
+  )
+)
+
+kable(problems, format = "html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover")) %>%
+  column_spec(1, bold = TRUE, color = "white", background = "#e63946") %>%
+  column_spec(2, italic = TRUE)
+```
+
+---
+
+# Código para tu Pipeline
+
+## Bloque Completo de Cálculo de `err_summary`
+
+```{r eval=FALSE}
+# Diagnóstico rápido: tasas de error promedio por transición
+if (!is.null(errF) && is.matrix(errF$err_out)) {
+  transition_names <- rownames(errF$err_out)
+  
+  if (is.null(transition_names)) {
+    warning("errF$err_out no tiene nombres de fila.")
+    err_summary_F <- data.frame(
+      Direction = "Forward",
+      A2C = NA, A2G = NA, A2T = NA, C2A = NA,
+      stringsAsFactors = FALSE
+    )
+  } else {
+    err_summary_F <- data.frame(
+      Direction = "Forward",
+      A2C = if("A2C" %in% transition_names) mean(errF$err_out["A2C", ], na.rm = TRUE) else NA,
+      A2G = if("A2G" %in% transition_names) mean(errF$err_out["A2G", ], na.rm = TRUE) else NA,
+      A2T = if("A2T" %in% transition_names) mean(errF$err_out["A2T", ], na.rm = TRUE) else NA,
+      C2A = if("C2A" %in% transition_names) mean(errF$err_out["C2A", ], na.rm = TRUE) else NA,
+      C2G = if("C2G" %in% transition_names) mean(errF$err_out["C2G", ], na.rm = TRUE) else NA,
+      C2T = if("C2T" %in% transition_names) mean(errF$err_out["C2T", ], na.rm = TRUE) else NA,
+      G2A = if("G2A" %in% transition_names) mean(errF$err_out["G2A", ], na.rm = TRUE) else NA,
+      G2C = if("G2C" %in% transition_names) mean(errF$err_out["G2C", ], na.rm = TRUE) else NA,
+      G2T = if("G2T" %in% transition_names) mean(errF$err_out["G2T", ], na.rm = TRUE) else NA,
+      T2A = if("T2A" %in% transition_names) mean(errF$err_out["T2A", ], na.rm = TRUE) else NA,
+      T2C = if("T2C" %in% transition_names) mean(errF$err_out["T2C", ], na.rm = TRUE) else NA,
+      T2G = if("T2G" %in% transition_names) mean(errF$err_out["T2G", ], na.rm = TRUE) else NA,
+      stringsAsFactors = FALSE
+    )
+    
+    message("Transiciones Forward disponibles: ", paste(transition_names, collapse = ", "))
+  }
+} else {
+  warning("errF$err_out no es una matriz.")
+}
+
+# Repetir para Reverse (errR)
+# ... (mismo código cambiando errF por errR)
+
+# Combinar y guardar
+err_summary <- rbind(err_summary_F, err_summary_R)
+write.csv(err_summary, "error_rates_summary.csv", row.names = FALSE)
+
+message("\n=== Resumen de tasas de error (promedio) ===")
+print(err_summary)
+```
+
+---
+
+# Resumen Ejecutivo
+
+## Tabla Resumen
+
+```{r}
+#| echo: false
+summary_table <- data.frame(
+  Aspecto = c("Qué es", "Cómo se calcula", "Valores normales", "Por qué importa", "Qué hacer"),
+  Explicación = c(
+    "Promedio de tasas de error por tipo de transición (A→C, A→G, etc.)",
+    "mean(errF$err_out['A2C', ]) → promedio a través de Q-scores",
+    "0.1% - 5% (0.001 - 0.05)",
+    "Valida que el modelo de error aprendió correctamente",
+    "Comparar F vs R, advertir si > 10%, revisar gráficos de error"
+  )
+)
+
+kable(summary_table, format = "html") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = TRUE) %>%
+  column_spec(1, bold = TRUE, width = "20%") %>%
+  column_spec(2, width = "80%")
+```
+
+---
+
+# Referencias y Recursos
+
+## Documentación Oficial
+
+- [dada2 Tutorial](https://benjjneb.github.io/dada2/tutorial.html)
+- [dada2 Paper (Callahan et al. 2016)](https://doi.org/10.1038/nmeth.3869)
+
+## Para tus Alumnos
+
+Esta tabla `err_summary` es **más para diagnóstico que para análisis final**, pero es útil para:
+
+1. ✅ Entender cómo dada2 distingue errores de variantes reales
+2. ✅ Validar la calidad de la secuenciación
+3. ✅ Comparar runs diferentes
+4. ✅ Detectar problemas técnicos temprano en el pipeline
+
+---
+
+# Ejercicios Prácticos
+
+## Ejercicio 1: Interpretar tus Resultados
+
+Usando tu propio `err_summary`:
+
+1. ¿Qué transición tiene la tasa de error más alta?
+2. ¿Es Reverse > Forward? ¿Cuánto?
+3. ¿Alguna transición supera el 5%?
+
+```{r eval=FALSE}
+# Tu código aquí
+err_summary <- read.csv("tu_error_rates_summary.csv")
+
+# Encuentra la transición con mayor error
+max_error <- max(err_summary[err_summary$Direction == "Forward", -1], na.rm = TRUE)
+# ...
+```
+
+## Ejercicio 2: Comparar con Datos Simulados
+
+```{r}
+# Genera datos simulados con error conocido
+set.seed(123)
+n_reads <- 10000
+true_seq <- sample(c("A", "C", "G", "T"), n_reads, replace = TRUE)
+
+# Introduce 3% de errores A→C
+observed_seq <- true_seq
+errors_idx <- sample(which(true_seq == "A"), size = round(0.03 * sum(true_seq == "A")))
+observed_seq[errors_idx] <- "C"
+
+# Calcula tasa de error observada
+observed_rate <- sum(observed_seq != true_seq) / n_reads
+cat("Tasa de error introducida: 3%\n")
+cat("Tasa de error observada:", round(observed_rate * 100, 2), "%\n")
+```
+
+---
+
+# Notas Finales
+
+:::{.callout-note}
+## Recuerda
+
+- Las tasas de error **NO son fijas**: dependen de la calidad de cada base (Q-score)
+- `err_summary` **promedia** a través de Q-scores para simplificar
+- Para análisis detallado, usa los gráficos `plotErrors(errF)`
+- Esta información es **diagnóstica**, no se usa directamente en análisis downstream
+:::
+
+:::{.callout-tip}
+## Para el Curso
+
+Muestra a tus alumnos:
+
+1. La tabla `err_summary` impresa
+2. Los gráficos `errF.png` y `errR.png`
+3. Cómo interpretar valores "normales" vs "problemáticos"
+4. Qué hacer si hay valores altos (> 10%)
+:::
+
+---
+
+# Session Info
+
+```{r}
+sessionInfo()
+```

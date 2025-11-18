@@ -1,0 +1,124 @@
+---
+title: "Explicación del Pipeline dada2 - Paso Filter and Trim"
+author: "Tu Nombre"
+date: "`r Sys.Date()`"
+format:
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    code-tools: true
+    theme: cosmo
+    highlight-style: github
+    embed-resources: true
+---
+
+# Introducción al paso Filter and Trim en dada2
+
+El paso **Filter and Trim** es el primer gran filtro de calidad en el pipeline de dada2.  
+Su objetivo es eliminar lecturas de baja calidad, bases ambiguas y recortar las secuencias en los puntos donde la calidad cae, asegurando que solo las regiones confiables sean usadas en los análisis posteriores.
+
+---
+
+## ¿Qué hace el código en este paso?
+
+### 1. Cálculo de puntos de truncamiento (`truncLen`)
+
+- El pipeline analiza los perfiles de calidad de las lecturas forward y reverse.
+- Se determina el ciclo donde la calidad promedio cae por debajo de un umbral definido en la tabla de parámetros (`F_qual`, `R_qual`).
+- Se usa la mediana entre muestras para definir el punto global de recorte, evitando que lecturas de baja calidad afecten el análisis.
+
+### 2. Limitación del recorte máximo (`max_trim`)
+
+- Se compara el punto de truncamiento calculado con el valor máximo permitido (`max_trim`) para evitar perder el solapamiento necesario entre lecturas forward y reverse.
+
+### 3. Filtrado y trimming
+
+- Se ejecuta el filtrado usando los parámetros:
+  - **`truncLen`**: recorta las lecturas en los puntos calculados.
+  - **`maxEE`**: define el máximo de errores esperados permitidos por lectura (usualmente 2).
+  - **`maxN`**: no permite bases ambiguas (N).
+  - **`truncQ`**: recorta la lectura si encuentra una base con calidad menor a este valor (usualmente 2).
+  - **`rm.phix`**: elimina lecturas que corresponden al control PhiX de Illumina.
+- El código valida que los puntos de truncamiento sean razonables (no menores a 50 bp).
+
+### 4. Diagnóstico y reporte de retención
+
+- Se calcula la retención global de lecturas (porcentaje de lecturas que pasan el filtro).
+- Si la retención es baja (< 50%), se advierte al usuario para que revise los parámetros o la calidad de los datos.
+- Se identifican muestras con retención muy baja (< 30%), lo que puede indicar problemas de calidad o contaminación.
+
+### 5. Guardado de estadísticas
+
+- Se guarda una tabla con las estadísticas de filtrado para inspección posterior y diagnóstico.
+
+---
+
+## Explicación de los parámetros principales
+
+| Parámetro   | Descripción                                                                 |
+|-------------|-----------------------------------------------------------------------------|
+| `truncLen`  | Posición donde se recorta cada lectura (Forward y Reverse), calculada según calidad |
+| `maxEE`     | Máximo número de errores esperados permitidos por lectura (por dirección)   |
+| `maxN`      | Número máximo de bases ambiguas permitidas (usualmente 0)                   |
+| `truncQ`    | Recorta la lectura si encuentra una base con calidad menor a este valor     |
+| `rm.phix`   | Elimina lecturas que corresponden al control PhiX de Illumina               |
+
+---
+
+## ¿Por qué es importante este paso?
+
+- Elimina lecturas que podrían introducir errores técnicos en el análisis.
+- Asegura que solo las regiones de alta calidad sean usadas para inferir variantes.
+- Reduce el ruido y la probabilidad de obtener variantes falsas.
+- Permite un diagnóstico temprano de problemas de calidad en la secuenciación.
+
+---
+
+## Recomendaciones para el análisis
+
+- Revisa los gráficos de calidad antes de definir los parámetros de recorte.
+- Si la retención de lecturas es baja, considera relajar los parámetros (`maxEE`, `truncLen`) o revisar la calidad de la secuenciación.
+- Usa la tabla de filtrado para identificar muestras problemáticas y tomar decisiones informadas sobre el análisis.
+
+---
+
+## Resumen ejecutivo
+
+| Aspecto | Explicación |
+|---------|-------------|
+| **Qué es** | Primer filtro de calidad y recorte de lecturas en dada2 |
+| **Cómo se calcula** | Analiza perfiles de calidad, define puntos de truncamiento y aplica filtros |
+| **Valores normales** | Retención global > 50%, truncLen > 50 bp |
+| **Por qué importa** | Evita errores técnicos y mejora la precisión de los ASVs |
+| **Qué hacer** | Ajusta parámetros según calidad, revisa diagnósticos y gráficos |
+
+---
+
+## Ejercicios prácticos
+
+1. **Identifica el punto de truncamiento óptimo** usando los gráficos de calidad generados por el pipeline.
+2. **Revisa la tabla de filtrado**: ¿Qué muestras tienen retención < 30%? ¿Por qué?
+3. **Compara la retención global** entre runs diferentes. ¿Qué parámetros afectan más la retención?
+
+---
+
+## Notas finales
+
+:::{.callout-note}
+## Recuerda
+
+- El paso Filter and Trim es esencial para obtener datos confiables en metabarcoding.
+- Ajusta los parámetros según la calidad de tus datos y revisa siempre los diagnósticos y gráficos generados por el pipeline.
+:::
+
+:::{.callout-tip}
+## Para el curso
+
+Muestra a tus alumnos:
+
+1. Los gráficos de calidad antes y después del filtrado.
+2. La tabla de filtrado y retención por muestra.
+3. Cómo interpretar valores "normales" vs "problemáticos".
+4. Qué hacer si hay valores bajos de retención.
+:::

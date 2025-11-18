@@ -1,0 +1,77 @@
+---
+title: "Evaluación de calidad: FastQC y MultiQC"
+#subtitle: "24–28 de noviembre de 2025<br>Instituto de Ciencias del Mar y Limnología (UNAM)"
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    toc-location: left
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+## Objetivo
+
+En esta clase aprenderemos a realizar control de calidad (QA/QC) en
+archivos FASTQ usando herramientas bioinformáticas.
+
+## Pasos principales
+
+1.  **Verificación de integridad de archivos**
+2.  **Conteo de lecturas**
+3.  **Análisis de calidad con FastQC**
+4.  **Filtrado y recorte de lecturas**
+5.  **Revisión de resultados**
+
+## 1. Verificación de integridad
+
+Puedes usar la terminal para verificar los checksums de tus archivos:
+
+``` bash
+md5sum raw_fastqs/*.fastq
+```
+
+## 2. Conteo de lecturas
+
+Cada lectura ocupa 4 líneas en un archivo FASTQ. Para contar lecturas:
+
+``` bash
+for f in raw_fastqs/*.fastq; do echo -n "$(basename "$f")   "; expr $(wc -l < "$f") / 4; done > conteo_lecturas.tsv
+```
+
+## 3. Análisis de calidad con FastQC
+
+Instala FastQC y ejecuta:
+
+``` bash
+fastqc raw_fastqs/*.fastq -o fastqc_reports/
+```
+
+## 4. Filtrado y recorte de lecturas
+
+Puedes usar herramientas como Cutadapt o Trimmomatic. Ejemplo con
+Cutadapt:
+
+``` bash
+cutadapt -q 20 -o output_trimmed.fastq input.fastq
+```
+
+## 5. Revisión de resultados
+
+Vuelve a correr FastQC sobre los archivos filtrados y compara los
+reportes.
+
+## Ejemplo en R: Leer el conteo de lecturas
+
+``` r
+conteo <- read.table("conteo_lecturas.tsv", header = FALSE, sep = "\t")
+colnames(conteo) <- c("Archivo", "Lecturas")
+print(conteo)
+```
+
+## Conclusiones
+
+El control de calidad es esencial para asegurar la confiabilidad de los
+datos antes de cualquier análisis bioinformático.

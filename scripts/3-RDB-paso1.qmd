@@ -1,0 +1,147 @@
+---
+title: "Base de datos de referencia local, parte 1: Búsqueda en NCBI"
+#subtitle: "24–28 de noviembre de 2025<br>Instituto de Ciencias del Mar y Limnología (UNAM)"
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    toc-location: left
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+## Paso 1. Activación de paquetes
+
+Activa `renv` si estás ejecutando con Rscript desde terminal
+
+```{r}
+# Definición de rutas usando el root del proyecto
+# here::here() detecta automáticamente la raíz (donde está el .Rproj)
+proj_root <- here::here()
+message("Proyecto detectado en: ", proj_root)
+
+# Fijar working directory a la raíz del proyecto
+# Esto es útil para código que no usa here() internamente y para Rscript
+setwd(proj_root)
+message("Working directory fijado a: ", proj_root)
+
+if (file.exists(file.path("renv", "activate.R"))) { source(file.path("renv", "activate.R")) }
+```
+
+Cargar librerías
+
+```{r}
+library(renv) 
+library(insect) 
+library(tidyverse) 
+library(Biostrings) 
+library(rentrez) 
+library(purrr) 
+library(ape)
+```
+
+## Paso 2. Parámetros
+
+```{r}
+locus_name <- "12S" # o "16S", etc. 
+amp_len_min <- 100 
+amp_len_max <- 1000 
+mito_len_min <- 15000 
+mito_len_max <- 16000 
+use_refseq <- FALSE # TRUE reduce duplicados/erratas 
+restrict_taxon <- "Chordata[ORGN]" # puedes usar taxid con [Organism:exp] 
+out_dir<-"metadata/"
+
+NCBI_SLEEP_SEC <- 0.34 #respeta rate-limit de NCBI 
+if (nzchar(Sys.getenv("NCBI_API_KEY"))) { 
+  rentrez::set_entrez_key(Sys.getenv("NCBI_API_KEY")) 
+  NCBI_SLEEP_SEC <- 0.11 # con API key, ~10 req/seg 
+} 
+if (nzchar(Sys.getenv("ENTREZ_EMAIL"))) { 
+  # Opcional, buena práctica para NCBI 
+  rentrez::set_entrez_email(Sys.getenv("ENTREZ_EMAIL")) 
+  }
+```
+
+## Paso 3. Queries y descarga
+
+```{r}
+amp_query <- paste( 
+  restrict_taxon, 
+  sprintf("(%s[All Fields] AND rRNA[Feature Key])", locus_name), "mitochondrion[Filter]", 
+  sprintf("%d:%d[SLEN]", amp_len_min, amp_len_max), 
+  "biomol_genomic[PROP]",
+  sep = " AND " 
+) 
+if (use_refseq) amp_query <- paste(amp_query, "srcdb_refseq[PROP]", sep = " AND ")
+
+mito_query <- paste( 
+  restrict_taxon, "mitochondrion[Filter]", 
+  sprintf("%d:%d[SLEN]", mito_len_min, mito_len_max), 
+  "biomol_genomic[PROP]", sep = " AND " 
+) 
+if (use_refseq) mito_query <- paste(mito_query, "srcdb_refseq[PROP]", sep = " AND ")
+
+message("Amplicón query: ", amp_query) 
+message("Mitogenomas query: ", mito_query)
+```
+
+## Paso 4. Buscar usando historial web
+
+```{r}
+s_amp <- rentrez::entrez_search(db = "nucleotide", term = amp_query, retmax = 0, use_history = TRUE) 
+
+s_mito <- rentrez::entrez_search(db = "nucleotide", term = mito_query, retmax = 0, use_history = TRUE)
+
+message("Hits amplicón: ", s_amp$count, " | Hits mitogenomas: ", s_mito$count)
+```
+
+## Paso 5. Salida
+
+```{r}
+out_dir <- file.path("metadata") 
+if (!dir.exists(out_dir)) { 
+  dir.create(out_dir, recursive = TRUE, showWarnings = FALSE) 
+} 
+
+output_file <- file.path(out_dir, sprintf("All_Chordata_%s_Amplicon_plus_Mitogenomes.fasta", locus_name))
+
+#Si existe de antes, eliminar para no mezclar ejecuciones.
+if (file.exists(output_file)) file.remove(output_file)
+```
+
+## Paso 6. Descarga paginada con web_history
+
+```{r}
+# 
+fetch_history_to_fasta <- function(search_obj, outfile, chunk_size = 2000, sleep = NCBI_SLEEP_SEC) { 
+  if (is.null(search_obj) || is.null(search_obj$count) || search_obj$count == 0) return(invisible(NULL)) 
+  nchunks <- ceiling(search_obj$count / chunk_size)
+  for (i in seq_len(nchunks)) {
+    retstart <- (i - 1) * chunk_size
+    seqs <- rentrez::entrez_fetch(
+      db          = "nucleotide",
+      web_history = search_obj$web_history, 
+      rettype = "fasta", 
+      retmax = chunk_size, retstart = retstart 
+    ) 
+    if (nzchar(seqs)) {
+      cat(seqs, file = outfile, append = TRUE, sep = "\n") 
+    } 
+    cat(sprintf("Chunk %d/%d: %d–%d\n", 
+                i, nchunks, retstart + 1, min(i * chunk_size, search_obj$count))) 
+    Sys.sleep(sleep) 
+  } 
+}
+```
+
+## Paso 7. Descargar amplicones + mitogenomas al mismo FASTA
+
+```{r echo=FALSE}
+fetch_history_to_fasta(s_amp, output_file) 
+fetch_history_to_fasta(s_mito, output_file)
+
+message("FASTA escrito en: ", output_file)
+```

@@ -1,0 +1,130 @@
+---
+title: "3-dada2QAQC"
+author: "Tania Valdivia Carrillo"
+format: html
+editor: visual
+---
+
+# Introducción al Pipeline de Análisis de Metabarcoding con dada2
+
+## ¿Qué hace este pipeline?
+
+Este script implementa un **pipeline completo y reproducible** para el análisis de datos de metabarcoding de ADN ambiental (eDNA) utilizando el paquete **dada2** en R. El objetivo es transformar lecturas crudas de secuenciación de alto rendimiento en una **tabla de variantes de secuencias amplificadas (ASVs)** con asignación taxonómica.
+
+---
+
+## Flujo de trabajo paso a paso
+
+### 1. Configuración del ambiente reproducible
+- Establece rutas de trabajo usando `here()` para independencia de la ubicación
+- Carga las librerías necesarias (`dada2`, `tidyverse`, `ShortRead`, etc.)
+- Lee parámetros específicos por marcador molecular desde `metadata/primer_data.csv`
+- Guarda información de sesión (`sessionInfo()`) para reproducibilidad
+
+### 2. Control de calidad inicial
+- Lee archivos FASTQ pareados (R1 y R2) filtrados por marcador (for_dada2)
+- Genera perfiles de calidad por posición/ciclo para cada muestra
+- **Calcula automáticamente** puntos de truncamiento basados en:
+  - Calidad promedio en ventanas deslizantes (sliding-window)
+  - Umbrales de calidad específicos por marcador (F_qual, R_qual)
+- Visualiza distribución de longitudes de lecturas crudas
+
+### 3. Filtrado y trimming (`filterAndTrim`)
+- Elimina lecturas con baja calidad (maxEE = 2)
+- Trunca lecturas según los puntos calculados en el paso anterior
+- Remueve secuencias con bases ambiguas (N) y contaminación PhiX
+- Genera archivos FASTQ filtrados en subdirectorio `filtered/`
+
+### 4. Dereplicación
+- Identifica secuencias únicas en cada muestra
+- Reduce redundancia manteniendo información de abundancia
+- Optimiza recursos computacionales para pasos posteriores
+
+### 5. Modelado de errores de secuenciación
+- Aprende tasas de error específicas para lecturas Forward y Reverse
+- Usa más de 100 millones de bases y hasta 25 iteraciones para convergencia
+- Guarda gráficos de tasas de error observadas vs. esperadas
+
+### 6. Inferencia de ASVs (denoising)
+- Aplica algoritmo de dada2 para corregir errores de secuenciación
+- Distingue variantes biológicas reales de errores técnicos
+- Resuelve secuencias a **resolución de nucleótido único**
+
+### 7. Unión de pares (merging)
+- Ensambla lecturas Forward y Reverse usando región de solapamiento
+- Requiere mínimo 12 bp de overlap
+- Reconstruye amplicón completo
+
+### 8. Construcción de tabla ASV
+- Crea matriz de abundancias (muestras × ASVs)
+- Cada columna = secuencia única biológica real
+
+### 9. Eliminación de quimeras
+- Detecta y remueve artefactos de PCR (secuencias quiméricas)
+- Método "consensus" compara con ASVs parentales más abundantes
+- Reporta proporción de lecturas no quiméricas
+
+### 10. Filtrado por longitud
+- Define rango aceptable: **mediana ± desviación estándar**
+- Genera histogramas antes/después del filtro con líneas de referencia
+- Guarda ASVs filtradas en archivos de log
+
+### 11. Asignación taxonómica
+- Usa base de datos específica por marcador (definida en `primer_data.csv`)
+- Algoritmo naive Bayesian classifier (RDP)
+- Prueba cadena reverso-complementaria automáticamente
+- Genera valores de bootstrap (confianza) por rango taxonómico
+- Calcula % de secuencias no asignadas por nivel
+
+### 12. Seguimiento de lecturas (tracking)
+- Tabla con número de lecturas retenidas en cada paso:
+  - Input → Filtered → Denoised F/R → Merged → No-chimeras → Length filter
+- Permite identificar dónde se pierden más lecturas
+
+### 13. Generación de outputs finales
+
+**CSV generados:**
+
+- `ASV_table.csv`: tabla de abundancias en formato largo (Sample_name, Label, Sequence, nReads)
+- `taxonomy_output.csv`: asignación taxonómica por ASV (Kingdom → Species)
+- `tax_bootstrap.csv`: valores de confianza por nivel taxonómico
+- `filtered_out_asv.csv`: ASVs removidas por filtro de longitud
+
+**Gráficos (PNG a 300 DPI):**
+
+- Perfiles de calidad Forward/Reverse
+- Distribución de longitudes crudas
+- Distribución de longitudes de ASVs (pre y post-filtrado)
+- Gráficos de tasas de error
+
+**RData:**
+
+- `phyloseq_inputs.RData`: contiene objetos listos para importar en phyloseq:
+  - `otu_mat`: matriz de abundancias (integer)
+  - `tax_mat`: matriz taxonómica
+  - `sample_meta`: metadatos de muestras
+  - `track`: tabla de seguimiento
+  - `params`: parámetros usados en el análisis
+
+---
+
+## Ventajas de este pipeline
+
+✅ **Reproducible**: rutas relativas, parámetros documentados, sessionInfo guardado  
+✅ **Flexible**: procesa múltiples marcadores usando tabla de configuración  (
+✅ **Robusto**: maneja archivos vacíos, valida inputs, protege contra errores  
+✅ **Trazable**: guarda logs detallados y gráficos de QC en cada paso  
+✅ **Listo para análisis**: outputs optimizados para phyloseq y análisis downstream  
+
+---
+
+## Para empezar
+
+1. Asegúrate de tener archivos FASTQ en `for_dada2/`
+2. Completa `metadata/primer_data.csv` con parámetros de tu marcador
+3. Completa `metadata/metadata.csv` con información de tus muestras
+4. Ajusta `i <- 1` a la fila del marcador que quieres procesar
+5. Ejecuta el script completo o por secciones
+
+**¡El pipeline está diseñado para aprender haciendo!** Cada sección está comentada para que entiendas qué hace y por qué.
+
