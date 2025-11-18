@@ -25,6 +25,7 @@ conda install -c conda-forge libcurl
 ```sh
 git clone https://github.com/taniavaldiviac/metabarcoding-code/
 cd metabarcoding-code
+#git pull origin main
 ```
 
 ### 5. Abre R en el entorno conda
