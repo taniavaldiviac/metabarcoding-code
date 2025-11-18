@@ -44,3 +44,4 @@ metadata/acc2tax_cache_12S.tsv.gz
 metadata/acc2org_cache_12S.tsv.gz
 metadata/12S_fish_taxonomy.fasta
 metadata/12S_fish_taxonomy_original.fasta
+scripts/Report.html
