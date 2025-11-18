@@ -86,6 +86,3 @@ Si necesitas adaptaciones (salud, discapacidad, horarios), avísanos con antelac
 -   Dudas: correo (**tania.valdiviac\@gmail.com**) o “issues” en GitHub del repositorio asistencia.\
 -   Dudas técnicas extensas: bloque de asesoría al cierre de cada práctica.
 
-<br>
-
-<center>*Actualizado a las `r format(Sys.time(), "%H:%M")` del `r format(Sys.Date(), "%d %b %Y")`*</center>
