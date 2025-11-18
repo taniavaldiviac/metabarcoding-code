@@ -1,0 +1,91 @@
+---
+title: "Metabarcoding en comunidades de eucariontes"
+subtitle: "24–28 de noviembre de 2025<br>Instituto de Ciencias del Mar y Limnología (UNAM)"
+format:
+  html:
+    toc: true
+    toc-depth: 2
+    toc-location: left
+execute:
+  echo: false
+  warning: false
+  message: false
+---
+
+## **Descripción del curso**
+
+El curso busca formar una nueva generación de investigadores y profesionales capaces de aplicar herramientas moleculares y bioinformáticas para el estudio de la biodiversidad.
+Este taller proporcionará las bases teóricas y prácticas necesarias para implementar el metabarcoding como una técnica robusta en estudios ecológicos, de conservación y de manejo ambiental.
+Aspiramos a crear una comunidad de especialistas que puedan integrar el ADN ambiental como una herramienta de monitoreo en ecosistemas marinos, contribuyendo al conocimiento de la biodiversidad y la toma de decisiones basadas en ciencia.
+
+## **Misión**
+
+Capacitar a investigadores, estudiantes y técnicos en el uso de herramientas moleculares y bioinformáticas para el estudio de la biodiversidad.
+A través de una combinación de teoría y práctica, buscamos proporcionar conocimientos sólidos sobre el metabarcoding y qPCR, desde la recolección y procesamiento de muestras hasta el análisis e interpretación de datos con enfoques bioinformáticos.
+
+Nuestro objetivo es empoderar a los participantes con habilidades técnicas y analíticas que les permitan diseñar e implementar estudios basados en ADN ambiental, optimizando la detección de especies y la evaluación de comunidades biológicas.
+Fomentamos la adopción de metodologías estandarizadas y reproducibles que faciliten la generación de datos confiables y comparables a nivel global.
+
+A través de este curso, promovemos la formación de una comunidad interdisciplinaria comprometida con la aplicación de la genética y la bioinformática en la conservación y monitoreo de la biodiversidad, impulsando el uso de tecnologías innovadoras para la toma de decisiones informadas en investigación y gestión ambiental.
+
+## **Objetivo**
+
+El objetivo de este curso es capacitar a los participantes en el uso de metabarcoding para el análisis de ADN ambiental para la detección y monitoreo de especies y comunidades en ecosistemas marinos.
+A través de un enfoque teórico-práctico, los asistentes aprenderán a diseñar y ejecutar estudios de metabarcoding, desde la recolección de muestras y procesamiento en laboratorio, hasta el análisis bioinformático e interpretación de datos utilizando DADA2.
+
+Este curso busca proporcionar las habilidades necesarias para:
+
+✔ Comprender los fundamentos teóricos del metabarcoding, qPCR y ADN ambiental en estudios ecológicos.\
+✔ Aplicar buenas prácticas en la toma de muestras y manejo de ADN en laboratorio, minimizando riesgos de contaminación.\
+✔ Implementar pipelines bioinformáticos para el procesamiento y análisis de secuencias, con énfasis en control de calidad, asignación taxonómica y análisis de diversidad.\
+✔ Interpretar resultados ecológicos y generar visualizaciones efectivas para estudios de biodiversidad.\
+✔ Diseñar estudios de metabarcoding adaptados a distintas preguntas ecológicas y de conservación.
+
+Al finalizar el curso, los participantes estarán preparados para integrar el metabarcoding en sus proyectos de investigación y contribuir al desarrollo de estrategias de monitoreo de biodiversidad en ecosistemas marinos.
+
+## **Equipo docente**
+
+**Dra. Tania Valdivia Carrillo** — Investigadora postdoctoral CIBNOR CONAHCYT (tania.valdiviac\@gmail.com)\
+**Dr. Fausto Valenzuela Quiñonez** — Investigador Titular B CIBNOR
+
+## Horarios y sede
+
+**Fechas:** 24–28 de noviembre de 2025\
+**Horario:** 9:00–15:00 (almuerzo 12:00–13:30)\
+**Lugar:** Sala de cómputo, edificio de posgrado, ICMyL (UNAM)
+
+**Formato:** Mañanas teóricas (charlas y discusión).
+Tardes prácticas en computadora (R/DADA2).
+
+## **Requisitos previos**
+
+-   Conocimientos básicos de **biología molecular**.\
+-   Manejo elemental de Unix, **R** y RStudio (objetos, scripts, paquetes).\
+-   Laptop con permisos para instalar software.
+
+**Antes del día 1**: instalar **R (≥4.3)**, **RStudio**, y crear cuenta en **GitHub**.
+
+## **Conducta en el aula**
+
+Ambiente inclusivo y respetuoso.
+No se toleran expresiones que excluyan o intimiden.
+Se espera lenguaje inclusivo, escucha activa, crítica constructiva y colaboración.
+
+## **Acceso y adaptaciones**
+
+Si necesitas adaptaciones (salud, discapacidad, horarios), avísanos con antelación para acordarlas de manera razonable y efectiva.
+
+## **Metodología de enseñanza**
+
+-   **Sesiones teóricas** con diapositivas, ejemplos y discusión guiada.\
+-   **Laboratorios computacionales** con datasets de ejemplo y notebooks Quarto.\
+-   **Miniproyecto** por equipo: diseño de muestreo + pipeline + reporte corto reproducible.
+
+## **Comunicación**
+
+-   Dudas: correo (**tania.valdiviac\@gmail.com**) o “issues” en GitHub del repositorio asistencia.\
+-   Dudas técnicas extensas: bloque de asesoría al cierre de cada práctica.
+
+<br>
+
+<center>*Actualizado a las `r format(Sys.time(), "%H:%M")` del `r format(Sys.Date(), "%d %b %Y")`*</center>
