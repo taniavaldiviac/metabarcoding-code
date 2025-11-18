@@ -3,7 +3,7 @@ title: "Metabarcoding en comunidades de eucariontes"
 subtitle: "24–28 de noviembre de 2025<br>Instituto de Ciencias del Mar y Limnología (UNAM)"
 format:
   html:
-    toc: true
+    toc: false
     toc-depth: 2
     toc-location: left
 execute:
@@ -85,7 +85,3 @@ Si necesitas adaptaciones (salud, discapacidad, horarios), avísanos con antelac
 
 -   Dudas: correo (**tania.valdiviac\@gmail.com**) o “issues” en GitHub del repositorio asistencia.\
 -   Dudas técnicas extensas: bloque de asesoría al cierre de cada práctica.
-
-<br>
-
-<center>*Actualizado a las `r format(Sys.time(), "%H:%M")` del `r format(Sys.Date(), "%d %b %Y")`*</center>
