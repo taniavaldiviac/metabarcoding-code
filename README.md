@@ -17,8 +17,7 @@ conda activate r-bio
 ### 3. Instala los paquetes base de R y dependencias del sistema
 
 ```sh
-conda install -c conda-forge r-matrix r-mgcv r-mass r-lattice r-nlme r-survival
-conda install -c conda-forge libcurl openssl zlib libxml2
+conda install -c conda-forge libcurl
 ```
 
 ### 4. Clona tu repositorio
