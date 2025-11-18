@@ -63,7 +63,13 @@ renv::restore()
 git push
 
 ```sh
-quarto render scripts/Report.qmd
+quarto render scripts/syllabus.qmd
+```
+10. Descarga en tu computadora
+
+```sh
+scp usuario@servidor:/home/usuario/metabarcoding-code/scripts/syllabus.html .
+scp -r usuario@servidor:/home/usuario/metabarcoding-code/scripts/syllabus_files .
 ```
 
 ---
